@@ -1,0 +1,39 @@
+name: FantasyDailies TV build v2
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+      LOG: ${{ github.workspace }}/log.txt
+    steps:
+      - name: Switch off the old builds
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for w in build-auto.yml firetv.yml build.yml tvbuild.yml; do gh workflow disable "$w" -R "${{ github.repository }}" >> "$LOG" 2>&1 || true; done
+      - id: code
+        name: Get the app code from FantasyDailies.com
+        run: |
+          {
+          for i in 1 2 3; do
+            CODE=$(curl -sS -A "$UA" -L -o src.zip -w "%{http_code}" "https://fantasydailies.com/fdtvsrc.php?k=750771025dedf42c3139c0f91cd38822" || echo "000")
+            echo "code download try $i - the server answered: $CODE"
+            if [ "$CODE" = "200" ] && [ "$(head -c 2 src.zip)" = "PK" ]; then break; fi
+            sleep 5
+          done
+          if [ "$(head -c 2 src.zip)" != "PK" ]; then echo "THE SERVER DID NOT HAND OVER THE CODE. It said:"; head -c 600 src.zip; echo; exit 1; fi
+          unzip -q src.zip -d src && echo "got the app code"
+          } 2>&1 | tee -a "$LOG"
+      - id: java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-ve
