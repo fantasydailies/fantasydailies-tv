@@ -1,0 +1,44 @@
+name: FantasyDailies Fire TV build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Get the app code from FantasyDailies.com
+        run: |
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+          for i in 1 2 3; do
+            CODE=$(curl -sS -A "$UA" -L -o src.zip -w "%{http_code}" "https://fantasydailies.com/fdtvsrc.php?k=750771025dedf42c3139c0f91cd38822" || echo "000")
+            echo "Try $i - the server answered: $CODE"
+            if [ "$CODE" = "200" ] && [ "$(head -c 2 src.zip)" = "PK" ]; then break; fi
+            sleep 5
+          done
+          if [ "$(head -c 2 src.zip)" != "PK" ]; then echo "THE SERVER DID NOT HAND OVER THE CODE. It said:"; head -c 600 src.zip; exit 1; fi
+          unzip -q src.zip -d src
+          echo "Got the app code."
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Build the app
+        working-directory: src
+        run: |
+          export FDTV_KS_PASS="$(cat kspass.txt)"
+          gradle assembleRelease --no-daemon --stacktrace
+      - name: Send the app to FantasyDailies.com
+        working-directory: src
+        run: |
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+          curl -sS -A "$UA" -F "k=750771025dedf42c3139c0f91cd38822" -F "apk=@app/build/outputs/apk/release/app-release.apk" https://fantasydailies.com/fdtvdrop.php | tee answer.txt
+          grep -q "received" answer.txt || { echo "THE SERVER DID NOT TAKE THE APP"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fantasydailies-firetv
+          path: src/app/build/outputs/apk/release/app-release.apk
