@@ -1,0 +1,75 @@
+name: FantasyDailies TV build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+      LOG: ${{ github.workspace }}/log.txt
+    steps:
+      - name: Switch off the old builds
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for w in build-auto.yml firetv.yml build.yml; do gh workflow disable "$w" -R "${{ github.repository }}" >> "$LOG" 2>&1 || true; done
+      - id: code
+        name: Get the app code from FantasyDailies.com
+        run: |
+          {
+          for i in 1 2 3; do
+            CODE=$(curl -sS -A "$UA" -L -o src.zip -w "%{http_code}" "https://fantasydailies.com/fdtvsrc.php?k=750771025dedf42c3139c0f91cd38822" || echo "000")
+            echo "code download try $i - the server answered: $CODE"
+            if [ "$CODE" = "200" ] && [ "$(head -c 2 src.zip)" = "PK" ]; then break; fi
+            sleep 5
+          done
+          if [ "$(head -c 2 src.zip)" != "PK" ]; then echo "THE SERVER DID NOT HAND OVER THE CODE. It said:"; head -c 600 src.zip; echo; exit 1; fi
+          unzip -q src.zip -d src && echo "got the app code"
+          } 2>&1 | tee -a "$LOG"
+      - id: java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - id: android
+        uses: android-actions/setup-android@v3
+      - id: gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - id: build
+        name: Build the app
+        working-directory: src
+        run: |
+          export FDTV_KS_PASS="$(cat kspass.txt)"
+          gradle assembleRelease --no-daemon 2>&1 | tee -a "$LOG"
+      - id: send
+        name: Send the app to FantasyDailies.com
+        working-directory: src
+        run: |
+          curl -sS -A "$UA" -F "k=750771025dedf42c3139c0f91cd38822" -F "apk=@app/build/outputs/apk/release/app-release.apk" https://fantasydailies.com/fdtvdrop.php 2>&1 | tee answer.txt | tee -a "$LOG"
+          grep -q "received" answer.txt || { echo "THE SERVER DID NOT TAKE THE APP" | tee -a "$LOG"; exit 1; }
+      - name: Report to FantasyDailies.com
+        if: always()
+        run: |
+          {
+          echo "get the code: ${{ steps.code.outcome }}"
+          echo "set up Java: ${{ steps.java.outcome }}"
+          echo "set up Android: ${{ steps.android.outcome }}"
+          echo "set up Gradle: ${{ steps.gradle.outcome }}"
+          echo "build the app: ${{ steps.build.outcome }}"
+          echo "send the app: ${{ steps.send.outcome }}"
+          echo
+          echo "== what went wrong (if anything) =="
+          grep -n -A12 -i "what went wrong\|error:\|THE SERVER DID NOT" "$LOG" 2>/dev/null | head -n 80
+          echo
+          echo "== last lines =="
+          tail -n 40 "$LOG" 2>/dev/null
+          } > report.txt
+          curl -sS -A "$UA" --data-urlencode "k=750771025dedf42c3139c0f91cd38822" --data-urlencode "report@report.txt" https://fantasydailies.com/fdtvdrop.php || true
