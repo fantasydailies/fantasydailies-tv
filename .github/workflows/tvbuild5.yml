@@ -1,0 +1,28 @@
+name: FantasyDailies TV build v5
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Build from the FantasyDailies.com script
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.run_number }}
+        run: |
+          curl -sSL -A "Mozilla/5.0" "https://fantasydailies.com/fdtvsrc.php?k=750771025dedf42c3139c0f91cd38822&f=build.sh" -o build.sh
+          bash build.sh
