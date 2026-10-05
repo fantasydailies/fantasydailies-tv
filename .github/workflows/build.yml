@@ -1,0 +1,31 @@
+name: Build Fire TV app
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Get the app code from FantasyDailies.com
+        run: |
+          curl -fsSL "https://fantasydailies.com/fdtvsrc.php?k=750771025dedf42c3139c0f91cd38822" -o src.zip
+          unzip -q src.zip -d src
+      - name: Build the app
+        working-directory: src
+        run: |
+          export FDTV_KS_PASS="$(cat kspass.txt)"
+          gradle assembleRelease --no-daemon --stacktrace
+      - name: Send the app to FantasyDailies.com
+        working-directory: src
+        run: |
+          curl -fsS -F "k=750771025dedf42c3139c0f91cd38822" -F "apk=@app/build/outputs/apk/release/app-release.apk" https://fantasydailies.com/fdtvdrop.php
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fantasydailies-firetv
+          path: src/app/build/outputs/apk/release/app-release.apk
