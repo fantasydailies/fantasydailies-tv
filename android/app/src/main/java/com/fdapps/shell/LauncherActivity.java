@@ -7,8 +7,7 @@ import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Bundle;
 
-import androidx.activity.ComponentActivity;
-import androidx.activity.EdgeToEdge;
+import android.app.Activity;
 import androidx.browser.customtabs.CustomTabColorSchemeParams;
 import androidx.browser.customtabs.CustomTabsClient;
 import androidx.browser.customtabs.CustomTabsServiceConnection;
@@ -17,13 +16,12 @@ import androidx.browser.trusted.TrustedWebActivityIntentBuilder;
 
 /** Phone and tablet: opens the website full screen in the phone's browser engine (a Trusted Web Activity).
  *  On a TV it hands straight over to the TV screen. With no usable browser it falls back to the built-in web view. */
-public class LauncherActivity extends ComponentActivity {
+public class LauncherActivity extends Activity {
     private CustomTabsServiceConnection conn;
     private boolean launched;
 
     @Override
     protected void onCreate(Bundle state) {
-        EdgeToEdge.enable(this);
         super.onCreate(state);
         if (isTv()) { startActivity(new Intent(this, TvActivity.class)); finish(); return; }
         Uri data = getIntent() != null ? getIntent().getData() : null;
