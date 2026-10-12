@@ -20,7 +20,7 @@ android {
         tallkk {
             dimension "brand"
             applicationId "com.tallkk.app"
-            versionCode 2
+            versionCode 3
             versionName "1.0.0"
             buildConfigField "String", "PHONE_URL", '"https://tallkk.com/"'
             buildConfigField "String", "TV_URL", '"https://tallkk.com/tallkktv.php"'
