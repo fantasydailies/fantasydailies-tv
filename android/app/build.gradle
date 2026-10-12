@@ -1,0 +1,39 @@
+plugins { id "com.android.application" }
+android {
+    namespace "com.fdapps.shell"
+    compileSdk 36
+    defaultConfig { minSdk 23; targetSdk 36 }
+    buildFeatures { buildConfig true }
+    flavorDimensions "brand"
+    productFlavors {
+        fd {
+            dimension "brand"
+            applicationId "com.fantasydailies.twa"
+            versionCode 2
+            versionName "1.1.0"
+            buildConfigField "String", "PHONE_URL", '"https://fantasydailies.com/?src=pwa"'
+            buildConfigField "String", "TV_URL", '"https://fantasydailies.com/tv.php"'
+            buildConfigField "String", "BRAND", '"FantasyDailies"'
+            buildConfigField "int", "BG", "0xFF0B1426"
+            manifestPlaceholders = [host: "fantasydailies.com"]
+        }
+        tallkk {
+            dimension "brand"
+            applicationId "com.tallkk.app"
+            versionCode 1
+            versionName "1.0.0"
+            buildConfigField "String", "PHONE_URL", '"https://tallkk.com/"'
+            buildConfigField "String", "TV_URL", '"https://tallkk.com/tallkktv.php"'
+            buildConfigField "String", "BRAND", '"Tallkk"'
+            buildConfigField "int", "BG", "0xFF04050A"
+            manifestPlaceholders = [host: "tallkk.com"]
+        }
+    }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+    implementation "androidx.browser:browser:1.8.0"
+    implementation "androidx.activity:activity:1.10.1"
+    implementation "androidx.core:core:1.16.0"
+}

@@ -1,0 +1,46 @@
+name: Android apps (FantasyDailies + Tallkk, phone + Google TV)
+on:
+  push:
+    branches: [android]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" > /dev/null 2>&1 || true
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Build both apps
+        id: build
+        run: |
+          set -o pipefail
+          gradle -p android bundleFdRelease bundleTallkkRelease assembleFdRelease assembleTallkkRelease --no-daemon --stacktrace 2>&1 | tee build.log
+      - name: Collect the files
+        if: always()
+        run: |
+          mkdir -p out
+          cp build.log out/ 2>/dev/null || echo "no log" > out/build.log
+          cp android/app/build/outputs/bundle/fdRelease/*.aab out/fantasydailies-unsigned.aab 2>/dev/null || true
+          cp android/app/build/outputs/bundle/tallkkRelease/*.aab out/tallkk-unsigned.aab 2>/dev/null || true
+          cp android/app/build/outputs/apk/fd/release/*.apk out/fantasydailies-unsigned.apk 2>/dev/null || true
+          cp android/app/build/outputs/apk/tallkk/release/*.apk out/tallkk-unsigned.apk 2>/dev/null || true
+          ls -la out
+      - name: Publish the files
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "android-${{ github.run_number }}" out/* --target "${{ github.sha }}" --title "Android build ${{ github.run_number }} (${{ steps.build.outcome }})" --notes "build: ${{ steps.build.outcome }}" --prerelease
