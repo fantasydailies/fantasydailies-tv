@@ -1,10 +1,14 @@
 # Tallkk puller: brings queued shows' YouTube episodes onto the Tallkk TV channels (only shows whose hosts gave written OK).
-# Runs every 4 hours, or on demand from the Actions tab. Needs the repo secret TALLKK_TOOL_KEY (the tool key from the desk's Settings).
+# Runs every 4 hours, or on demand from the Actions tab. No secret to set: it signs in to tallkk.com with GitHub's own signed
+# token, and tallkk.com only lets this workflow on main in.
 name: Tallkk puller
 on:
   schedule:
     - cron: "17 */4 * * *"
   workflow_dispatch: {}
+permissions:
+  id-token: write
+  contents: read
 concurrency:
   group: tallkk-puller
   cancel-in-progress: false
@@ -18,11 +22,14 @@ jobs:
           python-version: "3.12"
       - name: Tools
         run: pip install -q -U yt-dlp requests && ffmpeg -version | head -1
+      - name: Sign in to Tallkk
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=tallkk" | python3 -c "import json,sys;print(json.load(sys.stdin)['value'])")
+          R=$(curl -sS -X POST -H "Authorization: Bearer $T" --data-urlencode "t=$T" "https://tallkk.com/tkcontrol.php?api=ghkey")
+          K=$(printf '%s' "$R" | python3 -c "import json,sys;j=json.load(sys.stdin);print(j.get('key',''))" 2>/dev/null || true)
+          if [ -z "$K" ]; then echo "Tallkk refused the puller: $R"; exit 1; fi
+          echo "::add-mask::$K"; echo "TALLKK_TOOL_KEY=$K" >> "$GITHUB_ENV"; echo "signed in"
       - name: Get the puller
         run: curl -fsSL https://tallkk.com/tallkk-puller.py -o puller.py
       - name: Bring episodes over
-        env:
-          TALLKK_TOOL_KEY: ${{ secrets.TALLKK_TOOL_KEY }}
-        run: |
-          if [ -z "$TALLKK_TOOL_KEY" ]; then echo "Add the TALLKK_TOOL_KEY secret first (desk > Settings > Tool key)"; exit 1; fi
-          python puller.py --max 5
+        run: python puller.py --max 5
