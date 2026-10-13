@@ -3,12 +3,7 @@
 # token, and tallkk.com only lets this workflow on main in.
 name: Tallkk puller
 on:
-  schedule:
-    - cron: "17 */4 * * *"
-  workflow_dispatch: {}
-  push:
-    branches: [main]
-    paths: ["puller-run.txt"]
+  workflow_dispatch: {}   # schedule switched off Oct 13: YouTube refuses downloads from GitHub's servers ("confirm you're not a bot")
 permissions:
   id-token: write
   contents: read
