@@ -1,0 +1,28 @@
+# Tallkk puller: brings queued shows' YouTube episodes onto the Tallkk TV channels (only shows whose hosts gave written OK).
+# Runs every 4 hours, or on demand from the Actions tab. Needs the repo secret TALLKK_TOOL_KEY (the tool key from the desk's Settings).
+name: Tallkk puller
+on:
+  schedule:
+    - cron: "17 */4 * * *"
+  workflow_dispatch: {}
+concurrency:
+  group: tallkk-puller
+  cancel-in-progress: false
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tools
+        run: pip install -q -U yt-dlp requests && ffmpeg -version | head -1
+      - name: Get the puller
+        run: curl -fsSL https://tallkk.com/tallkk-puller.py -o puller.py
+      - name: Bring episodes over
+        env:
+          TALLKK_TOOL_KEY: ${{ secrets.TALLKK_TOOL_KEY }}
+        run: |
+          if [ -z "$TALLKK_TOOL_KEY" ]; then echo "Add the TALLKK_TOOL_KEY secret first (desk > Settings > Tool key)"; exit 1; fi
+          python puller.py --max 5
