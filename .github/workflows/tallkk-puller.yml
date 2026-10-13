@@ -1,0 +1,35 @@
+# Tallkk puller (run-now branch): a push to this branch runs the puller once. The 4-hourly schedule lives on main.
+name: Tallkk puller (run now)
+on:
+  push:
+    branches: [puller]
+  workflow_dispatch: {}
+permissions:
+  id-token: write
+  contents: read
+concurrency:
+  group: tallkk-puller
+  cancel-in-progress: false
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tools
+        run: pip install -q -U yt-dlp requests && ffmpeg -version | head -1
+      - name: Sign in to Tallkk
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=tallkk" | python3 -c "import json,sys;print(json.load(sys.stdin)['value'])")
+          R=$(curl -sS -X POST -H "Authorization: Bearer $T" --data-urlencode "t=$T" "https://tallkk.com/tkcontrol.php?api=ghkey")
+          K=$(printf '%s' "$R" | python3 -c "import json,sys;j=json.load(sys.stdin);print(j.get('key',''))" 2>/dev/null || true)
+          if [ -z "$K" ]; then echo "::error title=Tallkk refused the puller::$(printf '%s' "$R" | head -c 300)"; exit 1; fi
+          echo "::add-mask::$K"; echo "TALLKK_TOOL_KEY=$K" >> "$GITHUB_ENV"; echo "signed in"
+      - name: Get the puller
+        run: curl -fsSL https://tallkk.com/tallkk-puller.py -o puller.py
+      - name: Bring episodes over
+        run: |
+          python puller.py --max 5 2>&1 | tee run.log
+          echo "::notice title=Puller::$(grep -E 'nothing queued|==|bring over|filed|FAILED|could not' run.log | tr '\n' ' ' | head -c 900)"
