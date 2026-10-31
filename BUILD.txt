@@ -1,0 +1,71 @@
+FantasyDailies TV build
+run      1  (v12)
+built    2026-10-31 15:16 UTC
+APK      minSdk 22 - for Fire TV sideloading
+AAB      minSdk 24 - Play automatic protection will not take less
+
+3fc96be4f74047272d07d332d26461d864d69c3d2d6dfc25793d9fa85fbac250  FantasyDailiesTV.apk
+a5c3c9e9d7146e135bade8a27de3f2966413e99a5bae4beb19b02d433eacab08  FantasyDailiesTV.aab
+
+=== app/build.gradle used for the bundle ===
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.fantasydailies.tv'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.fantasydailies.tv"
+        minSdk 22
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+    signingConfigs {
+        release {
+            storeFile file("fdtv-release.jks")
+            storePassword System.getenv("FDTV_KS_PASS")
+            keyAlias "fdtv"
+            keyPassword System.getenv("FDTV_KS_PASS")
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+
+// Added by the build workflow for the Play bundle only.
+// Play automatic protection refuses anything below 24. A second
+// android block overrides the first, so the server source stays
+// at 22 and Fire TV keeps its sideload reach.
+android { defaultConfig { minSdkVersion 24; versionCode 2 } }
+
+=== AndroidManifest.xml used for the bundle ===
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FantasyDailies for Fire TV / Google TV - v1.0 test shell: opens the FantasyDailies TV pages full screen,
+     driven by the remote. Leanback launcher + banner so it appears on the TV home screen. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <application
+        android:label="FantasyDailies"
+        android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/banner"
+        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+        android:usesCleartextTraffic="false">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|navigation"
+            android:screenOrientation="landscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
