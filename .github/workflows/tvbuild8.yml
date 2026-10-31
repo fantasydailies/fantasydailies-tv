@@ -1,0 +1,93 @@
+name: FantasyDailies TV build v8
+# Builds the Fire TV APK and the Google Play AAB, then commits both to the
+# "builds" branch so they can be collected with plain git.
+#
+# NOTE: the source key is read out of tvbuild7.yml rather than written again here.
+# That key is public in nine workflow files and should be removed once the
+# keystore has been moved into an encrypted Actions secret.
+on:
+  workflow_dispatch:
+  push:
+    branches: [tvbuild-run]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: code
+        name: Get the app code from FantasyDailies.com
+        run: |
+          K=$(grep -ho 'k=[0-9a-f]\{32\}' .github/workflows/tvbuild7.yml | head -1 | cut -d= -f2)
+          [ -n "$K" ] || { echo "could not read the source key"; exit 1; }
+          for i in 1 2 3; do
+            CODE=$(curl -sS -A "$UA" -L -o src.zip -w "%{http_code}" "https://fantasydailies.com/fdtvsrc.php?k=$K" || echo 000)
+            echo "try $i - server answered $CODE"
+            [ "$CODE" = "200" ] && [ "$(head -c 2 src.zip)" = "PK" ] && break
+            sleep 5
+          done
+          [ "$(head -c 2 src.zip)" = "PK" ] || { echo "the server did not hand over the code"; head -c 400 src.zip; exit 1; }
+          unzip -q src.zip -d src
+          echo "got the app code"
+          echo "--- versions as built ---"
+          grep -E 'compileSdk|targetSdk|minSdk|versionCode|versionName' src/app/build.gradle
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          echo "sdk.dir=$ANDROID_HOME" > src/local.properties
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - id: build
+        name: Build the Fire TV APK and the Google Play AAB
+        working-directory: src
+        run: |
+          set -o pipefail
+          export FDTV_KS_PASS="$(cat kspass.txt)"
+          gradle assembleRelease bundleRelease --no-daemon 2>&1 | tail -40
+          ls -l app/build/outputs/apk/release/app-release.apk app/build/outputs/bundle/release/app-release.aab
+
+      - name: Publish the files to the builds branch
+        run: |
+          mkdir -p out
+          cp src/app/build/outputs/apk/release/app-release.apk out/FantasyDailiesTV.apk
+          cp src/app/build/outputs/bundle/release/app-release.aab out/FantasyDailiesTV.aab
+          cd out
+          sha256sum *.apk *.aab > SHA256SUMS.txt
+          {
+            echo "FantasyDailies TV build"
+            echo "run      ${{ github.run_number }}"
+            echo "built    $(date -u '+%Y-%m-%d %H:%M') UTC"
+            echo
+            cat SHA256SUMS.txt
+          } > BUILD.txt
+          git init -q
+          git config user.email "actions@github.com"
+          git config user.name "FantasyDailies build"
+          git checkout -q -b builds
+          git add -A
+          git commit -q -m "TV build run ${{ github.run_number }}"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" builds
+          echo "pushed to the builds branch"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fantasydailies-tv-files
+          path: |
+            src/app/build/outputs/apk/release/app-release.apk
+            src/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: ignore
