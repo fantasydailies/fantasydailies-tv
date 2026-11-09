@@ -1,0 +1,121 @@
+name: FantasyDailies TV build v9
+# Same as v8, with one difference that Google Play forced on us:
+#
+#   Play automatic protection refuses any bundle whose minSdkVersion is below 24.
+#   The app source is minSdk 22 so that Fire OS 5 sticks (API 22) can still
+#   sideload the APK. So this workflow builds the APK FIRST, at minSdk 22,
+#   stashes it, then raises minSdk to 24 and builds the Play bundle on its own.
+#   Fire TV keeps its reach; Play gets a bundle it will accept.
+#
+# NOTE: the source key is read out of tvbuild7.yml rather than written again here.
+# That key is public in ten workflow files and should be removed once the
+# keystore has been moved into an encrypted Actions secret.
+on:
+  workflow_dispatch:
+  push:
+    branches: [tvbuild9-run]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: code
+        name: Get the app code from FantasyDailies.com
+        run: |
+          K=$(grep -ho 'k=[0-9a-f]\{32\}' .github/workflows/tvbuild7.yml | head -1 | cut -d= -f2)
+          [ -n "$K" ] || { echo "could not read the source key"; exit 1; }
+          for i in 1 2 3; do
+            CODE=$(curl -sS -A "$UA" -L -o src.zip -w "%{http_code}" "https://fantasydailies.com/fdtvsrc.php?k=$K" || echo 000)
+            echo "try $i - server answered $CODE"
+            [ "$CODE" = "200" ] && [ "$(head -c 2 src.zip)" = "PK" ] && break
+            sleep 5
+          done
+          [ "$(head -c 2 src.zip)" = "PK" ] || { echo "the server did not hand over the code"; head -c 400 src.zip; exit 1; }
+          unzip -q src.zip -d src
+          echo "--- versions as the server holds them ---"
+          grep -E 'compileSdk|targetSdk|minSdk|versionCode|versionName' src/app/build.gradle
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          echo "sdk.dir=$ANDROID_HOME" > src/local.properties
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build the Fire TV APK at minSdk 22
+        working-directory: src
+        run: |
+          set -o pipefail
+          export FDTV_KS_PASS="$(cat kspass.txt)"
+          gradle assembleRelease --no-daemon 2>&1 | tail -30
+          mkdir -p ../keep
+          cp app/build/outputs/apk/release/app-release.apk ../keep/FantasyDailiesTV.apk
+          ls -l ../keep/FantasyDailiesTV.apk
+
+      - name: Raise minSdk to 24 for the Play bundle only
+        working-directory: src
+        run: |
+          sed -i -E 's/(minSdk(Version)?[[:space:]]*=?[[:space:]]*)22/\124/' app/build.gradle
+          echo "--- versions for the bundle ---"
+          grep -E 'compileSdk|targetSdk|minSdk|versionCode|versionName' app/build.gradle
+          grep -qE 'minSdk(Version)?[[:space:]]*=?[[:space:]]*24' app/build.gradle || { echo "minSdk was NOT raised - stopping"; exit 1; }
+
+      - name: Build the Google Play bundle at minSdk 24
+        working-directory: src
+        run: |
+          set -o pipefail
+          export FDTV_KS_PASS="$(cat kspass.txt)"
+          gradle clean bundleRelease --no-daemon 2>&1 | tail -30
+          cp app/build/outputs/bundle/release/app-release.aab ../keep/FantasyDailiesTV.aab
+          ls -l ../keep/FantasyDailiesTV.aab
+
+      - name: Check the bundle really says 24
+        run: |
+          cd keep
+          unzip -o -q FantasyDailiesTV.aab -d probe
+          if command -v aapt2 >/dev/null 2>&1; then aapt2 dump xmltree --file base/manifest/AndroidManifest.xml probe 2>/dev/null | grep -i -A1 minSdk || true; fi
+          echo "bundle contents:"; (cd probe && find . -type f | head -20)
+          rm -rf probe
+
+      - name: Publish the files to the builds branch
+        run: |
+          cd keep
+          sha256sum FantasyDailiesTV.apk FantasyDailiesTV.aab > SHA256SUMS.txt
+          {
+            echo "FantasyDailies TV build"
+            echo "run      ${{ github.run_number }}  (v9)"
+            echo "built    $(date -u '+%Y-%m-%d %H:%M') UTC"
+            echo "APK      minSdk 22 - for Fire TV sideloading"
+            echo "AAB      minSdk 24 - Play automatic protection will not take less"
+            echo
+            cat SHA256SUMS.txt
+          } > BUILD.txt
+          cat BUILD.txt
+          git init -q
+          git config user.email "actions@github.com"
+          git config user.name "FantasyDailies build"
+          git checkout -q -b builds
+          git add -A
+          git commit -q -m "TV build run ${{ github.run_number }} (v9: APK 22 / AAB 24)"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" builds
+          echo "pushed to the builds branch"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fantasydailies-tv-files-v9
+          path: keep/*
+          if-no-files-found: ignore
