@@ -1,0 +1,6 @@
+FantasyDailies TV build
+run      3
+built    2026-11-09 19:29 UTC
+
+614e6b0d16bfb725aeaea1f98029f7d0a3ff25b0a9477450134a2e602fc2a2ee  FantasyDailiesTV.apk
+80ef0bd4af9929a9c3a8378abfbeb4b85352596d94a82be3f97afdb8da0567ae  FantasyDailiesTV.aab
